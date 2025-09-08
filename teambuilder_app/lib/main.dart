@@ -174,6 +174,42 @@ Color typeColor(String t, BuildContext ctx) {
 class TeamController extends GetxController {
   final RxList<Pokemon> team = <Pokemon>[].obs;
   final int maxSize = 3;
+  class FavoriteTeamsController extends GetxController {
+  final _box = GetStorage();
+  final storageKey = 'favorite_team_keys_v1';
+  final RxSet<String> favoriteKeys = <String>{}.obs;
+
+  @override
+  void onInit() {
+    super.onInit();
+    final raw = _box.read<List>(storageKey) ?? [];
+    favoriteKeys.addAll(raw.whereType<String>());
+  }
+
+  void _persist() => _box.write(storageKey, favoriteKeys.toList());
+
+  /// นิยาม "กุญแจทีม" จากชื่อ + สมาชิก เพื่อระบุตัวเดียวกัน
+  String keyOf(TeamPreset p) => '${p.name}|${p.memberNames.join(",")}';
+
+  bool isFav(TeamPreset p) => favoriteKeys.contains(keyOf(p));
+
+  void toggle(TeamPreset p) {
+    final k = keyOf(p);
+    if (favoriteKeys.contains(k)) {
+      favoriteKeys.remove(k);
+      Get.snackbar('Removed', 'เอา "${p.name}" ออกจากทีมโปรดแล้ว',
+          snackPosition: SnackPosition.BOTTOM);
+    } else {
+      favoriteKeys.add(k);
+      Get.snackbar('Favorited', 'เพิ่ม "${p.name}" เป็นทีมโปรดแล้ว',
+          snackPosition: SnackPosition.BOTTOM);
+    }
+    _persist();
+  }
+}
+
+
+  
 
   void add(Pokemon p) {
     if (team.length >= maxSize) {
@@ -451,7 +487,7 @@ class PresetListPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ทีมที่บันทึกไว้'),
+        title: const Text('ทีมที่บันทึกไว้ของฉัน'),
         actions: [
           IconButton(
             tooltip: 'สร้างทีมใหม่',
@@ -462,7 +498,7 @@ class PresetListPage extends StatelessWidget {
       ),
       body: Obx(() {
         if (presets.presets.isEmpty) {
-          return const Center(child: Text('ยังไม่มีทีมที่บันทึกไว้'));
+          return const Center(child: Text('ยังไม่มีทีมที่บันทึกไว้ของฉัน'));
         }
         return ListView.separated(
           itemCount: presets.presets.length,
@@ -706,7 +742,7 @@ Future<String?> _askNameDialog(BuildContext context, {String? hint}) async {
   return showDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('ตั้งชื่อทีม'),
+      title: const Text('ตั้งชื่อทีมของฉัน'),
       content: TextField(
         controller: ctrl,
         decoration: InputDecoration(hintText: hint ?? 'ตั้งชื่อทีมของคุณ'),
