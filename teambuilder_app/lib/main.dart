@@ -95,8 +95,13 @@ const List<Pokemon> allPokemon = [
   Pokemon(name: 'Mew', image: '$base/151.png', type: "Psychic", skills: ["Aura Sphere"]),
 ];
 
-Pokemon? findPokemon(String name) =>
-    allPokemon.firstWhereOrNull((p) => p.name.toLowerCase() == name.toLowerCase());
+Pokemon? findPokemon(String name) {
+  try {
+    return allPokemon.firstWhere((p) => p.name.toLowerCase() == name.toLowerCase());
+  } catch (_) {
+    return null;
+  }
+}
 
 /* =======================
    Type chart (ย่อ) + สี
@@ -174,42 +179,6 @@ Color typeColor(String t, BuildContext ctx) {
 class TeamController extends GetxController {
   final RxList<Pokemon> team = <Pokemon>[].obs;
   final int maxSize = 3;
-  class FavoriteTeamsController extends GetxController {
-  final _box = GetStorage();
-  final storageKey = 'favorite_team_keys_v1';
-  final RxSet<String> favoriteKeys = <String>{}.obs;
-
-  @override
-  void onInit() {
-    super.onInit();
-    final raw = _box.read<List>(storageKey) ?? [];
-    favoriteKeys.addAll(raw.whereType<String>());
-  }
-
-  void _persist() => _box.write(storageKey, favoriteKeys.toList());
-
-  /// นิยาม "กุญแจทีม" จากชื่อ + สมาชิก เพื่อระบุตัวเดียวกัน
-  String keyOf(TeamPreset p) => '${p.name}|${p.memberNames.join(",")}';
-
-  bool isFav(TeamPreset p) => favoriteKeys.contains(keyOf(p));
-
-  void toggle(TeamPreset p) {
-    final k = keyOf(p);
-    if (favoriteKeys.contains(k)) {
-      favoriteKeys.remove(k);
-      Get.snackbar('Removed', 'เอา "${p.name}" ออกจากทีมโปรดแล้ว',
-          snackPosition: SnackPosition.BOTTOM);
-    } else {
-      favoriteKeys.add(k);
-      Get.snackbar('Favorited', 'เพิ่ม "${p.name}" เป็นทีมโปรดแล้ว',
-          snackPosition: SnackPosition.BOTTOM);
-    }
-    _persist();
-  }
-}
-
-
-  
 
   void add(Pokemon p) {
     if (team.length >= maxSize) {
@@ -273,6 +242,41 @@ class PresetsController extends GetxController {
   }
 }
 
+/// คอนโทรลเลอร์ "ทีมโปรด"
+class FavoriteTeamsController extends GetxController {
+  final _box = GetStorage();
+  final storageKey = 'favorite_team_keys_v1';
+  final RxSet<String> favoriteKeys = <String>{}.obs;
+
+  @override
+  void onInit() {
+    super.onInit();
+    final raw = _box.read<List>(storageKey) ?? [];
+    favoriteKeys.addAll(raw.whereType<String>());
+  }
+
+  void _persist() => _box.write(storageKey, favoriteKeys.toList());
+
+  /// สร้างคีย์เฉพาะทีม ตามชื่อ + สมาชิก (กันชื่อซ้ำคนละสมาชิก)
+  String keyOf(TeamPreset p) => '${p.name}|${p.memberNames.join(",")}';
+
+  bool isFav(TeamPreset p) => favoriteKeys.contains(keyOf(p));
+
+  void toggle(TeamPreset p) {
+    final k = keyOf(p);
+    if (favoriteKeys.contains(k)) {
+      favoriteKeys.remove(k);
+      Get.snackbar('Removed', 'เอา "${p.name}" ออกจากทีมโปรดแล้ว',
+          snackPosition: SnackPosition.BOTTOM);
+    } else {
+      favoriteKeys.add(k);
+      Get.snackbar('Favorited', 'เพิ่ม "${p.name}" เป็นทีมโปรดแล้ว',
+          snackPosition: SnackPosition.BOTTOM);
+    }
+    _persist();
+  }
+}
+
 /* =======================
    Pages
 ======================= */
@@ -283,6 +287,7 @@ class PokemonListPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final team = Get.put(TeamController());
     final presets = Get.put(PresetsController());
+    Get.put(FavoriteTeamsController(), permanent: true);
 
     return Scaffold(
       appBar: AppBar(
@@ -314,7 +319,7 @@ class PokemonListPage extends StatelessWidget {
             },
           ),
           IconButton(
-            tooltip: 'ดู/ใช้ทีมที่บันทึกไว้',
+            tooltip: 'ทีมที่บันทึกไว้',
             icon: const Icon(Icons.folder_shared),
             onPressed: () => Get.to(() => const PresetListPage()),
           ),
@@ -484,11 +489,17 @@ class PresetListPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final presets = Get.find<PresetsController>();
     final team = Get.find<TeamController>();
+    final fav = Get.find<FavoriteTeamsController>();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('ทีมที่บันทึกไว้ของฉัน'),
         actions: [
+          IconButton(
+            tooltip: 'ทีมโปรด',
+            icon: const Icon(Icons.star),
+            onPressed: () => Get.to(() => const FavoriteTeamsPage()),
+          ),
           IconButton(
             tooltip: 'สร้างทีมใหม่',
             icon: const Icon(Icons.add),
@@ -528,13 +539,24 @@ class PresetListPage extends StatelessWidget {
               trailing: Wrap(
                 spacing: 6,
                 children: [
+                  // ปุ่มดาว/ปลดดาว
+                  Obx(() {
+                    final isFav = fav.isFav(p);
+                    return IconButton(
+                      tooltip: isFav ? 'เอาออกจากโปรด' : 'เพิ่มเป็นโปรด',
+                      icon: Icon(isFav ? Icons.star : Icons.star_border,
+                          color: isFav ? Colors.amber : null),
+                      onPressed: () => fav.toggle(p),
+                    );
+                  }),
                   OutlinedButton.icon(
                     icon: const Icon(Icons.play_arrow),
                     label: const Text('ใช้ทีม'),
                     onPressed: () {
                       team.loadFromNames(p.memberNames);
                       Get.back(); // กลับไปหน้าเลือกตัว
-                      Get.snackbar('Loaded', 'โหลดทีม "${p.name}" แล้ว', snackPosition: SnackPosition.BOTTOM);
+                      Get.snackbar('Loaded', 'โหลดทีม "${p.name}" แล้ว',
+                          snackPosition: SnackPosition.BOTTOM);
                     },
                   ),
                   OutlinedButton.icon(
@@ -689,6 +711,70 @@ class _PresetEditorPageState extends State<PresetEditorPage> {
 }
 
 /* =======================
+   Favorite Page
+======================= */
+class FavoriteTeamsPage extends StatelessWidget {
+  const FavoriteTeamsPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final presets = Get.find<PresetsController>();
+    final team = Get.find<TeamController>();
+    final fav = Get.find<FavoriteTeamsController>();
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('ทีมโปรด')),
+      body: Obx(() {
+        final items = presets.presets.where((p) => fav.isFav(p)).toList();
+        if (items.isEmpty) return const Center(child: Text('ยังไม่มีทีมโปรด'));
+        return ListView.separated(
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const Divider(height: 1),
+          itemBuilder: (context, i) {
+            final p = items[i];
+            final members = p.memberNames.map(findPokemon).whereType<Pokemon>().toList();
+            return ListTile(
+              leading: const Icon(Icons.star, color: Colors.amber),
+              title: Text(p.name),
+              subtitle: Wrap(
+                spacing: 8, runSpacing: 8,
+                children: members.map((m) => Chip(
+                  avatar: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(m.image, width: 20, height: 20, fit: BoxFit.cover),
+                  ),
+                  label: Text(m.name, style: const TextStyle(fontSize: 12)),
+                  backgroundColor: typeColor(m.type, context).withOpacity(0.15),
+                )).toList(),
+              ),
+              trailing: Wrap(
+                spacing: 6,
+                children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('ใช้ทีม'),
+                    onPressed: () {
+                      team.loadFromNames(p.memberNames);
+                      Get.snackbar('Loaded', 'โหลดทีม "${p.name}" แล้ว',
+                          snackPosition: SnackPosition.BOTTOM);
+                    },
+                  ),
+                  IconButton(
+                    tooltip: 'เอาออกจากโปรด',
+                    icon: const Icon(Icons.star_outline),
+                    onPressed: () => fav.toggle(p),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      }),
+    );
+  }
+}
+
+/* =======================
    Widgets / Helpers
 ======================= */
 class _TypePill extends StatelessWidget {
@@ -742,7 +828,7 @@ Future<String?> _askNameDialog(BuildContext context, {String? hint}) async {
   return showDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('ตั้งชื่อทีมของฉัน'),
+      title: const Text('ตั้งชื่อทีม'),
       content: TextField(
         controller: ctrl,
         decoration: InputDecoration(hintText: hint ?? 'ตั้งชื่อทีมของคุณ'),
